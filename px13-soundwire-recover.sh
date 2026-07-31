@@ -1,25 +1,25 @@
 #!/bin/bash
-# PX13 — recuperacao do audio SoundWire apos resume do s2idle.
-# Roda como unidade transiente (systemd-run) disparada pelo hook
-# /usr/lib/systemd/system-sleep/50-px13-soundwire — NUNCA inline no resume,
-# para nao segurar o descongelamento da sessao (tela preta).
+# PX13 SoundWire audio recovery after s2idle resume.
+# Runs as a transient unit (systemd-run) started by the hook
+# /usr/lib/systemd/system-sleep/50-px13-soundwire. It must never run inline
+# during resume because that delays thawing the user session (black screen).
 #
-# Metodo (validado 2026-07-30): RELOAD COMPLETO dos modulos SoundWire/ACP.
-# O unbind/bind raso do PCI nao funciona no kernel 7.1.5 — os slaves somem
-# do barramento apos o s2idle e so a re-enumeracao do zero traz de volta.
+# Method (validated 2026-07-30): fully reload the SoundWire/ACP modules.
+# A simple PCI unbind/bind does not work on kernel 7.1.5. The peripherals
+# disappear from the bus after s2idle and only full re-enumeration restores them.
 #
-#   - reload SEMPRE (mesmo Attached): o firmware do DSP do TAS2783 nao
-#     sobrevive ao s2idle e so o re-probe re-baixa ("playback without fw
-#     download" = amp mudo);
-#   - unbind PCI -> rmmod stack (filhos primeiro) -> modprobe -> bind;
-#   - espera Attached (ate 20 s);
-#   - SEMPRE reinicia o pipewire da sessao (card sumido trava o grafo do
-#     wireplumber e mata ate o audio Bluetooth — constatado 2026-07-29);
-#   - se recuperou: reaplica profile HiFi e desmuta o speaker (so vira
-#     default se o default atual for auto_null, p/ nao roubar do BT).
+#   - Always reload, even when Attached: TAS2783 DSP firmware does not survive
+#     s2idle and only re-probing downloads it again ("playback without fw
+#     download" means a silent amplifier).
+#   - Unbind PCI -> unload stack (children first) -> load modules -> bind.
+#   - Wait up to 20 seconds for Attached status.
+#   - Always restart session PipeWire: a missing card wedges WirePlumber's graph
+#     and even breaks Bluetooth audio (observed 2026-07-29).
+#   - On success, restore the HiFi profile and unmute the speaker. Make it the
+#     default only when the current default is auto_null, so Bluetooth is kept.
 #
-# Instalar: /usr/local/lib/px13-soundwire-recover.sh (root:root 0755)
-# Rodar manual: sudo /usr/local/lib/px13-soundwire-recover.sh
+# Install: /usr/local/lib/px13-soundwire-recover.sh (root:root 0755)
+# Run manually: sudo /usr/local/lib/px13-soundwire-recover.sh
 set -u
 PCI="0000:c4:00.5"
 DRV="/sys/bus/pci/drivers/snd_pci_ps"
@@ -28,9 +28,9 @@ SINK="alsa_output.pci-0000_c4_00.5-platform-amd_sdw.HiFi__Speaker__sink"
 LOG="/var/log/px13-soundwire-resume.log"
 log(){ echo "$(date '+%F %T' 2>/dev/null||echo now) $*" >> "$LOG" 2>/dev/null; }
 
-# da tempo do resume terminar e a sessao descongelar antes de mexer em qualquer coisa
+# Allow resume to complete and the user session to thaw before changing devices.
 sleep 2
-log "recover: iniciando em background (ACP $PCI)"
+log "recovery: starting in the background (ACP $PCI)"
 
 is_bound(){ [ -e "/sys/bus/pci/devices/$PCI/driver" ]; }
 all_attached(){
@@ -41,15 +41,15 @@ all_attached(){
   done
   [ "$n" -ge 1 ] && [ "$ok" = "1" ]
 }
-status_str(){ local d s="(vazio)"; for d in /sys/bus/soundwire/devices/sdw:0:1:*; do [ -e "$d" ] || continue; s="$s $(basename "$d"|cut -d: -f4,5)=$(cat "$d/status" 2>/dev/null)"; done; echo "$s"; }
+status_str(){ local d s="(empty)"; for d in /sys/bus/soundwire/devices/sdw:0:1:*; do [ -e "$d" ] || continue; s="$s $(basename "$d"|cut -d: -f4,5)=$(cat "$d/status" 2>/dev/null)"; done; echo "$s"; }
 
-# NAO ha atalho "ja Attached": o s2idle apaga o firmware do DSP do TAS2783
-# mesmo com o barramento Attached ("error playback without fw download" no
-# dmesg — amp fica mudo em silencio; constatado 2026-07-30). So o re-probe
-# via reload de modulos re-baixa o firmware. Reload SEMPRE.
-is_bound && all_attached && log "recover: codecs Attached, mas recarregando mesmo assim (fw do amp nao sobrevive ao s2idle)"
+# There is no "already Attached" shortcut. s2idle clears TAS2783 DSP firmware
+# even when the bus remains Attached (dmesg reports "error playback without fw
+# download" and the amplifier is silent; observed 2026-07-30). Only re-probing
+# by reloading the modules downloads the firmware again. Always reload.
+is_bound && all_attached && log "recovery: codecs are Attached, but reloading because amplifier firmware does not survive s2idle"
 
-# --- reload completo dos modulos (ordem mapeada por lsmod, kernel 7.1.5) ---
+# Fully reload modules in the order mapped from lsmod on kernel 7.1.5.
 [ -e "/sys/bus/pci/devices/$PCI/driver" ] && { echo "$PCI" > "$DRV/unbind" 2>>"$LOG"; sleep 1; }
 MODS_DOWN=(snd_acp_sdw_legacy_mach snd_acp_sdw_mach snd_soc_rt721_sdca \
            snd_soc_tas2783_sdw snd_ps_sdw_dma snd_pci_ps \
@@ -58,22 +58,22 @@ MODS_DOWN=(snd_acp_sdw_legacy_mach snd_acp_sdw_mach snd_soc_rt721_sdca \
            soundwire_amd soundwire_generic_allocation)
 for m in "${MODS_DOWN[@]}"; do
   lsmod | grep -q "^$m " || continue
-  modprobe -r "$m" 2>>"$LOG" || log "rmmod $m FALHOU (segue)"
+  modprobe -r "$m" 2>>"$LOG" || log "rmmod $m FAILED (continuing)"
 done
 sleep 2
 for m in snd_pci_ps snd_soc_rt721_sdca snd_soc_tas2783_sdw snd_ps_sdw_dma snd_acp_sdw_legacy_mach; do
-  modprobe "$m" 2>>"$LOG" || log "modprobe $m FALHOU"
+  modprobe "$m" 2>>"$LOG" || log "modprobe $m FAILED"
 done
 sleep 2
-is_bound || { echo "$PCI" > "$DRV/bind" 2>>"$LOG"; log "bind manual pos-reload"; }
+is_bound || { echo "$PCI" > "$DRV/bind" 2>>"$LOG"; log "manually bound PCI device after reload"; }
 
-# espera enumeracao/attach (ate 20 s)
+# Wait up to 20 seconds for enumeration and attachment.
 for i in $(seq 1 40); do sleep 0.5; all_attached && break; done
-log "recover pos-reload:$(status_str)"
-all_attached || log "recover: codecs seguem fora — audio interno indisponivel (reboot); BT/HDMI liberados pelo restart abaixo"
+log "recovery after reload:$(status_str)"
+all_attached || log "recovery: codecs remain unavailable; internal audio requires a reboot; restarting PipeWire to restore Bluetooth and HDMI"
 
-# reinicia o pipewire da sessao SEMPRE: o sumico do card SoundWire no resume
-# deixa o grafo do wireplumber travado e mata ate o audio Bluetooth
+# Always restart session PipeWire. A missing SoundWire card after resume wedges
+# the WirePlumber graph and even breaks Bluetooth audio.
 UNAME="$(loginctl list-sessions --no-legend 2>/dev/null | awk '$4 ~ /seat/ {print $3; exit}')"
 [ -z "${UNAME:-}" ] && UNAME="$(id -nu 1000 2>/dev/null || echo root)"
 UID_="$(id -u "$UNAME" 2>/dev/null || echo 1000)"; RT="/run/user/$UID_"
@@ -84,14 +84,14 @@ if [ -S "$RT/bus" ]; then
   if all_attached; then
     ru pactl set-card-profile "$CARD" HiFi; sleep 1
     ru pactl set-sink-mute "$SINK" 0
-    # so assume o default se ninguem melhor estiver la (nao rouba do fone BT)
+    # Only become the default when none exists; do not replace Bluetooth audio.
     DEF="$(ru pactl get-default-sink 2>/dev/null)"
     case "${DEF:-}" in ""|auto_null) ru pactl set-default-sink "$SINK" ;; esac
-    log "recover: SUCESSO — pipewire reiniciado, HiFi/speaker de volta (default=${DEF:-vazio})"
+    log "recovery: SUCCESS; PipeWire restarted and HiFi speaker restored (previous default=${DEF:-empty})"
   else
-    log "recover: pipewire reiniciado sem speaker interno"
+    log "recovery: PipeWire restarted without the internal speaker"
   fi
 else
-  log "AVISO: $RT/bus ausente — pipewire nao reiniciado"
+  log "WARNING: $RT/bus is unavailable; PipeWire was not restarted"
 fi
 exit 0

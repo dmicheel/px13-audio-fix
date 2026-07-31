@@ -1,18 +1,18 @@
 #!/bin/bash
-# systemd-sleep hook — ProArt PX13 (HN7306): dispara a recuperacao do audio
-# SoundWire em SEGUNDO PLANO e retorna imediatamente.
+# systemd-sleep hook for ProArt PX13 (HN7306): starts SoundWire audio recovery
+# in the background and returns immediately.
 #
-# Por que nao rodar aqui dentro: hooks post de system-sleep bloqueiam o fim do
-# systemd-suspend.service, e a sessao do usuario (user.slice) fica CONGELADA
-# ate ele terminar — a versao antiga rodava a recuperacao inline (~90 s de tela
-# preta a cada resume) e ainda deadlockava ao reiniciar o pipewire de uma
-# sessao congelada (morria no timeout de 90 s do systemd-suspend.service).
+# Why recovery does not run here: post system-sleep hooks block completion of
+# systemd-suspend.service, and the user session (user.slice) remains frozen
+# until the hook exits. The old version ran recovery inline, causing about 90
+# seconds of black screen after every resume and deadlocking while restarting
+# PipeWire in a frozen session.
 #
-# Instalar: /usr/lib/systemd/system-sleep/50-px13-soundwire (root:root 0755)
-# Trabalho real: /usr/local/lib/px13-soundwire-recover.sh
+# Install: /usr/lib/systemd/system-sleep/50-px13-soundwire (root:root 0755)
+# Recovery worker: /usr/local/lib/px13-soundwire-recover.sh
 case "${1:-}" in post) : ;; *) exit 0 ;; esac
 systemd-run --no-block --collect --unit "px13-soundwire-recover-$$" \
   /usr/local/lib/px13-soundwire-recover.sh \
-  || echo "$(date '+%F %T') ERRO: systemd-run falhou; recuperacao nao disparada" \
+  || echo "$(date '+%F %T') ERROR: systemd-run failed; recovery was not started" \
        >> /var/log/px13-soundwire-resume.log 2>/dev/null
 exit 0

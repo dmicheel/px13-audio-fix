@@ -7,10 +7,26 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UCM=/usr/share/alsa/ucm2
-CARD=1
+# ALSA card numbers are assigned dynamically; find the SoundWire card by its
+# stable ID instead of assuming it is card 1 (HDMI often takes that slot).
+CARD=""
+for id_path in /proc/asound/card*/id; do
+  [ -r "$id_path" ] || continue
+  read -r card_id < "$id_path"
+  if [ "$card_id" = "amdsoundwire" ]; then
+    CARD="${id_path#/proc/asound/card}"
+    CARD="${CARD%/id}"
+    break
+  fi
+done
+[ -n "$CARD" ] || {
+  echo "Error: could not find the ALSA SoundWire card (amdsoundwire)" >&2
+  exit 1
+}
+
 # CardLongName varies by unit (HN7306EA vs HN7306EAC), so derive it at runtime
 # to name the override correctly. Fall back to the maintainer's original value.
-LONG="$(amixer -D hw:$CARD info 2>/dev/null | head -1 | awk -F"'" '{print $4}')"
+LONG="$(amixer -D "hw:$CARD" info 2>/dev/null | head -1 | awk -F"'" '{print $4}')"
 [ -n "$LONG" ] || LONG="ASUSTeKCOMPUTERINC.-ProArtPX13HN7306EAC-1.0-HN7306EAC"
 PCARD="alsa_card.pci-0000_c4_00.5-platform-amd_sdw"
 DKMS_NAME=snd-soc-tas2783-sdw-px13
@@ -50,7 +66,7 @@ echo "    Installed hook that starts recovery in the background after resume"
 
 echo "==> 4/8 Activating the corrected module"
 NEED_REBOOT=0
-if ! amixer -D hw:$CARD controls 2>/dev/null | grep -q 'Channel Playback'; then
+if ! amixer -D "hw:$CARD" controls 2>/dev/null | grep -q 'Channel Playback'; then
   systemctl --user stop wireplumber pipewire pipewire-pulse 2>/dev/null || true
   if sudo modprobe -r snd_soc_tas2783_sdw 2>/dev/null && sudo modprobe snd_soc_tas2783_sdw; then
     echo "    Module reloaded without rebooting"
@@ -64,7 +80,7 @@ else
 fi
 
 echo "==> 5/8 Validating UCM parsing (should list 'Speaker')"
-alsaucm -c $CARD list _devices/HiFi | sed 's/^/    /' || true
+alsaucm -c "$CARD" list _devices/HiFi | sed 's/^/    /' || true
 
 echo "==> 6/8 Restarting PipeWire and selecting the HiFi profile"
 systemctl --user restart wireplumber pipewire pipewire-pulse
@@ -77,7 +93,7 @@ for d in /sys/bus/soundwire/devices/sdw:*; do
   echo "    $(basename "$d"): $(cat "$d/status" 2>/dev/null)"
 done
 for n in 1 2; do
-  amixer -D hw:$CARD cget name="tas2783-$n Channel Playback" 2>/dev/null | tail -1 | sed "s/^/    tas2783-$n:/"
+  amixer -D "hw:$CARD" cget name="tas2783-$n Channel Playback" 2>/dev/null | tail -1 | sed "s/^/    tas2783-$n:/"
 done
 wpctl status | sed -n '/Sinks:/,/Sources:/p' | sed 's/^/    /'
 SPK=$(pactl list short sinks 2>/dev/null | awk '/amd_sdw/ && /[Ss]peaker/{print $2; exit}')

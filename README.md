@@ -140,8 +140,12 @@ uname -r                                   # stock kernel, >= 7.1
 modinfo -k $(uname -r) snd_soc_tas2783_sdw -F filename
 #   -> .../updates/... (the DKMS/patched module, not .../kernel/sound/...)
 
-amixer -D hw:1 cget name='tas2783-1 Channel Playback'   # values=1 (Left)
-amixer -D hw:1 cget name='tas2783-2 Channel Playback'   # values=2 (Right)
+CARD=$(for id in /proc/asound/card*/id; do
+  [ "$(cat "$id")" = amdsoundwire ] || continue
+  n=${id#/proc/asound/card}; printf '%s\n' "${n%/id}"; break
+done)
+amixer -D "hw:$CARD" cget name='tas2783-1 Channel Playback'   # values=1 (Left)
+amixer -D "hw:$CARD" cget name='tas2783-2 Channel Playback'   # values=2 (Right)
 
 pactl list cards | grep "Active Profile"   # HiFi
 speaker-test -D pulse -c2 -l1 -t wav       # voice L/R from the correct side
@@ -155,8 +159,9 @@ If the sides are physically swapped, exchange the two `cset` values in
 ## Troubleshooting
 
 - **"Dummy output" / no Speaker device** — the long-name override is not
-  installed or the card long-name differs. Check
-  `cat /proc/asound/card1/id` and `alsaucm -c1 list _devices/HiFi`.
+  installed or the card long-name differs. Find the card number `N` whose
+  `/proc/asound/cardN/id` contains `amdsoundwire`, then run
+  `cat /proc/asound/cardN/id` and `alsaucm -cN list _devices/HiFi`.
 - **Mono / one speaker only** — the stock module is loaded instead of the
   patched one (`modinfo -k $(uname -r) snd_soc_tas2783_sdw -F filename`
   must point into `updates/`), or the `Channel Playback` controls are absent.

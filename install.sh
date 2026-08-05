@@ -2,7 +2,7 @@
 # Durable ProArt PX13 internal audio installer (TAS2783).
 # For stock kernels >= 7.1 with the upstream TAS2783 driver. Run as a regular
 # user; the script requests sudo when required.
-#   bash install-durable.sh
+#   bash install.sh
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,22 +34,18 @@ DKMS_VER=1.0
 KREL="$(uname -r)"
 
 echo "==> 1/8 Kernel module with 'Channel Playback' control (requires sudo)"
-if command -v dkms >/dev/null 2>&1; then
-  # Remove an old manual installation so it cannot compete with DKMS.
-  sudo rm -f "/usr/lib/modules/$KREL/updates/snd-soc-tas2783-sdw.ko"
-  sudo mkdir -p "/usr/src/$DKMS_NAME-$DKMS_VER"
-  sudo cp -f "$REPO/module/tas2783-sdw.c" "$REPO/module/tas2783.h" \
-             "$REPO/module/Makefile" "$REPO/module/dkms.conf" \
-             "/usr/src/$DKMS_NAME-$DKMS_VER/"
-  sudo dkms install --force "$DKMS_NAME/$DKMS_VER" -k "$KREL"
-  echo "    Installed through DKMS (automatically rebuilds after kernel updates)"
-else
-  echo "    DKMS not found; using a manual build (repeat after every kernel update)"
-  ( cd "$REPO/module" && make KVER="$KREL" LLVM=1 )
-  sudo install -Dm644 "$REPO/module/snd-soc-tas2783-sdw.ko" \
-       "/usr/lib/modules/$KREL/updates/snd-soc-tas2783-sdw.ko"
-  sudo depmod -a "$KREL"
+if ! command -v dkms >/dev/null 2>&1; then
+  echo "    Error: dkms is required (e.g. pacman -S dkms)" >&2
+  exit 1
 fi
+# Remove an old manual installation so it cannot compete with DKMS.
+sudo rm -f "/usr/lib/modules/$KREL/updates/snd-soc-tas2783-sdw.ko"
+sudo mkdir -p "/usr/src/$DKMS_NAME-$DKMS_VER"
+sudo cp -f "$REPO/module/tas2783-sdw.c" "$REPO/module/tas2783.h" \
+           "$REPO/module/Makefile" "$REPO/module/dkms.conf" \
+           "/usr/src/$DKMS_NAME-$DKMS_VER/"
+sudo dkms install --force "$DKMS_NAME/$DKMS_VER" -k "$KREL"
+echo "    Installed through DKMS (automatically rebuilds after kernel updates)"
 
 echo "==> 2/8 UCM configuration (requires sudo)"
 sudo install -Dm644 "$REPO/configs/sof-soundwire_tas2783.conf"  "$UCM/sof-soundwire/tas2783.conf"

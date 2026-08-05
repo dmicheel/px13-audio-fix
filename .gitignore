@@ -13,6 +13,3 @@ module/.*.cmd
 module/modules.order
 module/Module.symvers
 module/.module-common.o
-
-# working material (not repo content)
-DRAFT-github-comment-737.md

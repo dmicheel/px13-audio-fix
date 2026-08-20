@@ -1,7 +1,7 @@
 # PX13 internal audio fix
 
 Restores the internal speakers on the ASUS ProArt PX13 (HN7306EA / HN7306EAC,
-AMD Strix Halo / ACP70, dual TAS2783 SoundWire amps) on stock kernels.
+AMD Strix Halo / ACP70, dual TAS2783 SoundWire amps) on stock kernels >= 7.2.
 
 Two problems are fixed:
 
@@ -13,20 +13,25 @@ Two problems are fixed:
    survive suspend; the amplifier comes back silent (or the SoundWire card
    wedges WirePlumber's graph and takes Bluetooth audio with it).
 
-Tested on `linux-cachyos 7.1.6-1`.
+Tested on `linux-cachyos 7.2.0-1`.
 
 ## What was modified vs upstream
 
-`module/` is mainline `sound/soc/codecs/tas2783-sdw.c` (same revision as in
-7.1.6) with these changes:
+`module/` is mainline `sound/soc/codecs/tas2783-sdw.c` (7.2) with these changes:
 
 | Change | Why |
 |---|---|
 | Added `Channel Playback` enum (Off/Left/Right) per amp, mapped to the SDCA UDMPU cluster-index register | UCM assigns `tas2783-1 = Left`, `tas2783-2 = Right` for stereo on the PX13 |
-| Removed `tas25xx_register_misc` / `tas25xx_deregister_misc` calls | No misc class device from this driver |
-| Firmware filename `%04X-%1X-0x%1X.bin` (added `0x` before the SDCA unique ID) | Matches the per-device calibration firmware referenced by the PX13 ACPI table |
 
-`tas2783.h` is unmodified upstream.
+The other two fixes carried by earlier versions of this module are now handled
+upstream as of 7.2 and were dropped:
+
+- **misc class device removal** — upstream removed the
+  `tas25xx_register_misc`/`tas25xx_deregister_misc` calls entirely.
+- **firmware `0x` prefix** — upstream now tries `%04X-%1X-0x%1X.bin` first and
+  falls back to the non-prefixed name if the calibration firmware is absent.
+
+`tas2783.h` is unmodified upstream (7.2).
 
 ## How it works
 
@@ -43,7 +48,7 @@ Tested on `linux-cachyos 7.1.6-1`.
   - `sof-soundwire_tas2783.conf` defines the Speaker device (channel mapping,
     playback PCM/mixer).
   - `codecs_tas2783_init.conf` remaps the two amps' volume controls into one
-    Speaker volume and attaches the speaker LED.
+    Speaker volume.
 - **Resume recovery** — `50-px13-soundwire` (systemd-sleep post hook) starts
   `px13-soundwire-recover.sh` as a detached transient unit (running it inline
   would block resume with the session frozen). The recovery:
@@ -63,8 +68,12 @@ bash install.sh
 ```
 
 Runs as a regular user (asks for sudo), and installs: the DKMS module, the
-three UCM configs, the sleep hook, and the recovery script. A live module
-reload is attempted so no reboot is needed; if that fails, reboot.
+three UCM configs, the sleep hook, and the recovery script. It does not assume
+the `amdsoundwire` card already exists: on a fresh machine it reloads the
+SoundWire/ACP module stack so the card comes up, then derives the unit-specific
+UCM override name from the live card (falling back to a default if the card is
+not present yet). A live module reload is attempted so no reboot is needed; if
+that fails, reboot.
 
 ## Components
 
@@ -73,7 +82,7 @@ reload is attempted so no reboot is needed; if that fails, reboot.
 | `module/` | `/usr/src/snd-soc-tas2783-sdw-px13-1.0` (DKMS) | patched `snd-soc-tas2783-sdw` driver |
 | `configs/px13-longname-override.conf` | `/usr/share/alsa/ucm2/conf.d/amd-soundwire/<CardLongName>.conf` | forces the tas2783 speaker codec |
 | `configs/sof-soundwire_tas2783.conf` | `/usr/share/alsa/ucm2/sof-soundwire/tas2783.conf` | Speaker device + channel mapping |
-| `configs/codecs_tas2783_init.conf` | `/usr/share/alsa/ucm2/codecs/tas2783/init.conf` | stereo volume remap, LED |
+| `configs/codecs_tas2783_init.conf` | `/usr/share/alsa/ucm2/codecs/tas2783/init.conf` | stereo volume remap |
 | `50-px13-soundwire` | `/usr/lib/systemd/system-sleep/` | post-resume hook, dispatches recovery detached |
 | `px13-soundwire-recover.sh` | `/usr/local/lib/` | module reload + audio stack restart + HiFi restore |
 
@@ -81,7 +90,7 @@ reload is attempted so no reboot is needed; if that fails, reboot.
 
 ```sh
 # both channel controls present (expect 2)
-amixer -D hw:0 controls | grep -c "Channel Playback"
+amixer -c amdsoundwire controls | grep -c "Channel Playback"
 
 # codecs attached
 for d in /sys/bus/soundwire/devices/sdw:0:1:*; do

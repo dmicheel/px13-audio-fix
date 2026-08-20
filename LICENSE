@@ -11,10 +11,9 @@ You can copy, modify, distribute and perform the work, even for
 commercial purposes, all without asking permission.
 
 Note: CC0 applies only to this guide and the original scripts
-(`install.sh`, `50-px13-soundwire`, `px13-soundwire-recover.sh`). The
-kernel module in `module/` is GPL-2.0, derived from the upstream TI
-tas2783 driver, and stays GPL-2.0. The configuration files in `configs/`
-carry the license of their respective upstream projects
-(alsa-ucm-conf, BSD-3-Clause).
+(`install.sh`). The kernel module in `module/` is GPL-2.0, derived from
+the upstream TI tas2783 driver, and stays GPL-2.0. The configuration
+files in `configs/` carry the license of their respective upstream
+projects (alsa-ucm-conf, BSD-3-Clause).
 
 Full CC0 text: https://creativecommons.org/publicdomain/zero/1.0/legalcode

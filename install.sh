@@ -29,7 +29,7 @@ find_card() {
   return 0
 }
 
-echo "==> 1/8 Kernel module with 'Channel Playback' control (requires sudo)"
+echo "==> 1/7 Kernel module with 'Channel Playback' control (requires sudo)"
 if ! command -v dkms >/dev/null 2>&1; then
   echo "    Error: dkms is required (e.g. pacman -S dkms)" >&2
   exit 1
@@ -46,22 +46,20 @@ sudo dkms install --force "$DKMS_NAME/$DKMS_VER" -k "$KREL"
 sudo depmod -a "$KREL"
 echo "    Installed through DKMS (automatically rebuilds after kernel updates)"
 
-echo "==> 2/8 SoundWire recovery after s2idle (requires sudo)"
-sudo install -Dm755 "$REPO/50-px13-soundwire" \
-     "/usr/lib/systemd/system-sleep/50-px13-soundwire"
-sudo install -Dm755 "$REPO/px13-soundwire-recover.sh" \
-     "/usr/local/lib/px13-soundwire-recover.sh"
-echo "    Installed hook that starts recovery in the background after resume"
+# The resume-recovery hook from older versions is obsolete (the module now
+# handles s2idle resume itself); remove it if a previous install left it.
+sudo rm -f /usr/lib/systemd/system-sleep/50-px13-soundwire \
+           /usr/local/lib/px13-soundwire-recover.sh
 
-echo "==> 3/8 Activating the corrected module"
+echo "==> 2/7 Activating the corrected module"
 # True when the patched module is active (card up and Channel Playback present).
 control_active() {
   local c; c="$(find_card)"
   [ -n "$c" ] && amixer -D "hw:$c" controls 2>/dev/null | grep -q 'Channel Playback'
 }
-# Reload the SoundWire/ACP stack (mirrors the recover script) whenever the
-# patched module is not active: card missing (fresh machine) or stock driver
-# bound (e.g. right after a reboot). This binds the DKMS module now.
+# Reload the SoundWire/ACP stack whenever the patched module is not active:
+# card missing (fresh machine) or stock driver bound (e.g. right after a
+# reboot). This binds the DKMS module now.
 if ! control_active; then
   if [ -n "$(find_card)" ]; then
     echo "    card present but stock driver bound; reloading stack to activate patched module..."
@@ -102,7 +100,7 @@ else
   echo "    Channel Playback control present (corrected module is active)"
 fi
 
-echo "==> 4/8 UCM configuration (requires sudo)"
+echo "==> 3/7 UCM configuration (requires sudo)"
 # CardLongName varies by unit (HN7306EA vs HN7306EAC). Derive it from the card
 # now that the activation step has brought it up; fall back if still absent.
 if [ -n "$CARD" ]; then
@@ -114,14 +112,14 @@ sudo install -Dm644 "$REPO/configs/codecs_tas2783_init.conf"    "$UCM/codecs/tas
 sudo install -Dm644 "$REPO/configs/px13-longname-override.conf" "$UCM/conf.d/amd-soundwire/$LONG.conf"
 echo "    Installed unowned override in conf.d/amd-soundwire (survives updates)"
 
-echo "==> 5/8 Validating UCM parsing (should list 'Speaker')"
+echo "==> 4/7 Validating UCM parsing (should list 'Speaker')"
 if [ -n "$CARD" ]; then
   alsaucm -c "$CARD" list _devices/HiFi | sed 's/^/    /' || true
 else
   echo "    (skipped: no amdsoundwire card yet)"
 fi
 
-echo "==> 6/8 Restarting PipeWire and selecting the HiFi profile"
+echo "==> 5/7 Restarting PipeWire and selecting the HiFi profile"
 systemctl --user restart wireplumber pipewire pipewire-pulse 2>/dev/null || true
 sleep 3
 if [ -n "$CARD" ]; then
@@ -129,7 +127,7 @@ if [ -n "$CARD" ]; then
   sleep 2
 fi
 
-echo "==> 7/8 Status (expected: Attached, channels 1/2, Speaker sink)"
+echo "==> 6/7 Status (expected: Attached, channels 1/2, Speaker sink)"
 for d in /sys/bus/soundwire/devices/sdw:*; do
   echo "    $(basename "$d"): $(cat "$d/status" 2>/dev/null)"
 done
@@ -145,7 +143,7 @@ if [ -n "${SPK:-}" ]; then
   echo "    Default sink = $SPK"
 fi
 
-echo "==> 8/8 Saving ALSA state"
+echo "==> 7/7 Saving ALSA state"
 sudo alsactl store || true
 
 echo

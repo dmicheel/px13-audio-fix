@@ -3,6 +3,8 @@
 *.disabled
 /tmp/
 .DS_Store
+__pycache__/
+*.pyc
 
 # kernel module build artifacts
 module/*.ko

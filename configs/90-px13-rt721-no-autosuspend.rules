@@ -1,0 +1,8 @@
+# Managed by px13-audio-fix.
+#
+# Keep the RT721 jack codec out of runtime suspend. On 7.3 it suspends 3 s
+# after probe, and its runtime resume fails (regcache_sync() returns
+# -ENODATA), so every later open fails with "ASoC error (-61)". PipeWire then
+# drops the whole UCM HiFi profile, Speaker included, if it probes the card
+# after that. Costs only the codec staying powered.
+ACTION=="add", SUBSYSTEM=="soundwire", KERNEL=="sdw:*:025d:0721:*", ATTR{power/control}="on"

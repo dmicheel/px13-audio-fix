@@ -1,0 +1,5 @@
+*.bak
+*.bak.*
+*.disabled
+/tmp/
+.DS_Store

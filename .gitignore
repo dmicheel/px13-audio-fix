@@ -1,0 +1,16 @@
+*.bak
+*.bak.*
+*.disabled
+/tmp/
+.DS_Store
+__pycache__/
+*.pyc
+
+# kernel module build artifacts
+module/**/*.o
+module/**/*.ko
+module/**/*.mod
+module/**/*.mod.c
+module/**/.*.cmd
+module/modules.order
+module/Module.symvers

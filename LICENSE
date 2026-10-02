@@ -1,0 +1,29 @@
+Creative Commons Legal Code
+
+CC0 1.0 Universal
+
+The person who associated a work with this deed has dedicated the work to
+the public domain by waiving all of his or her rights to the work
+worldwide under copyright law, including all related and neighboring
+rights, to the extent allowed by law.
+
+You can copy, modify, distribute and perform the work, even for
+commercial purposes, all without asking permission.
+
+Note: CC0 applies only to the guide (README.md) and the original scripts
+and configuration: install.sh, install-drivers.sh, install-tuning.sh,
+configs/px13-wireplumber.conf.in and configs/px13-speaker-route.lua.
+
+Other parts keep their own licenses:
+
+- module/: GPL-2.0, derived from the Linux kernel (TI tas2783 driver,
+  SoundWire machine helpers in sdw_utils/, rt1308.h). Full text in
+  module/COPYING. Modified files carry a notice of the changes.
+- configs/ UCM files (px13-longname-override.conf,
+  sof-soundwire_px13-speaker.conf, codecs_px13-speaker_init.conf):
+  BSD-3-Clause, the license of alsa-ucm-conf they build on. Full text in
+  configs/LICENSE.alsa-ucm-conf.
+- tunings/: not covered by this or any other license grant in this
+  repository.
+
+Full CC0 text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
